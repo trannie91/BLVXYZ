@@ -2,7 +2,7 @@ android {
     namespace = "com.blvxyz"
 }
 
-version = 8
+version = 9
 
 cloudstream {
     authors = listOf("BLVXYZ")
