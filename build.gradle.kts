@@ -70,8 +70,8 @@ subprojects {
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
         implementation(kotlin("stdlib"))
-        compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-        compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+        // Khớp đúng phiên bản 1.7.1 với NiceHttp:0.4.11 trên debugRuntimeClasspath (tránh lỗi strict version constraint của AGP 8.2.2)
+        compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1")
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
