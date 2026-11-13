@@ -22,20 +22,7 @@ class BLVXYZProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "hot" to "BLVXYZ - Phim Đề Cử Hot (/phimhay)",
-        "the-loai/phim-bl" to "Phim BL (Đam Mỹ) Mới Cập Nhật",
-        "phim-bo" to "Phim Bộ Mới Cập Nhật",
-        "phim-le" to "Phim Lẻ Mới Cập Nhật",
-        "quoc-gia/thai-lan" to "Phim Thái Lan",
-        "quoc-gia/han-quoc" to "Phim Hàn Quốc",
-        "quoc-gia/trung-quoc" to "Phim Trung Quốc",
-        "quoc-gia/nhat-ban" to "Phim Nhật Bản",
-        "quoc-gia/dai-loan" to "Phim Đài Loan",
-        "quoc-gia/au-my" to "Phim Âu Mỹ",
-        "the-loai/tinh-cam" to "Phim Tình Cảm",
-        "the-loai/tam-ly" to "Phim Tâm Lý",
-        "the-loai/co-trang" to "Phim Cổ Trang",
-        "the-loai/hai-huoc" to "Phim Hài Hước"
+        "tim-kiem?sort=updatedAt" to "Phim Mới Cập Nhật"
     )
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -121,12 +108,27 @@ class BLVXYZProvider : MainAPI() {
         return enhancePoster(best)
     }
 
-    private fun movieJsonToSearchResponse(obj: JSONObject): SearchResponse? {
+    private fun extractLatinOriginName(rawOrigin: String): String {
+        val cleaned = cleanTitle(rawOrigin)
+            .replace(Regex("""[^\x20-\x7E]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim(' ', '-', '|', ':', '/', ',')
+        return if (cleaned.length >= 2) cleaned else ""
+    }
+
+    private fun movieJsonToSearchResponse(obj: JSONObject, includeEnglishTitle: Boolean = false): SearchResponse? {
         val slug = obj.optString("slug").trim()
         val rawName = obj.optString("name").trim()
         if (slug.isEmpty() || rawName.isEmpty()) return null
 
-        val title = cleanTitle(rawName)
+        val viTitle = cleanTitle(rawName)
+        val enTitle = if (includeEnglishTitle) extractLatinOriginName(obj.optString("origin_name", "")) else ""
+        val title = if (enTitle.isNotEmpty() && !viTitle.contains(enTitle, ignoreCase = true)) {
+            "$viTitle ($enTitle)"
+        } else {
+            viTitle
+        }
+
         val movieUrl = "$mainUrl/phim/$slug"
         val posterUrl = resolveBestPoster(obj)
         val type = obj.optString("type").lowercase()
@@ -201,69 +203,7 @@ class BLVXYZProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        // Tab 1: Trang chủ /phimhay (Phim Hot + các bộ sưu tập homepageLists)
-        if (request.data == "hot") {
-            val lists = mutableListOf<HomePageList>()
-
-            if (page == 1) {
-                try {
-                    val hotText = app.get(
-                        "$apiUrl/api/v1/movies/hot",
-                        headers = mapOf("User-Agent" to userAgent, "Referer" to "$mainUrl/")
-                    ).text
-                    val hotJson = JSONObject(hotText)
-                    val arr = hotJson.optJSONArray("result")
-                    if (arr != null) {
-                        val hotItems = mutableListOf<SearchResponse>()
-                        for (i in 0 until arr.length()) {
-                            arr.optJSONObject(i)?.let { movieJsonToSearchResponse(it) }?.let { hotItems.add(it) }
-                        }
-                        if (hotItems.isNotEmpty()) {
-                            lists.add(HomePageList("Phim Hot Đề Cử", hotItems.distinctBy { it.url }, false))
-                        }
-                    }
-                } catch (_: Throwable) {}
-            }
-
-            var totalPages = 1
-            try {
-                val listsText = app.get(
-                    "$apiUrl/api/v1/lists/homepageLists?page=$page&limit=5",
-                    headers = mapOf("User-Agent" to userAgent, "Referer" to "$mainUrl/")
-                ).text
-                val listsJson = JSONObject(listsText)
-                val resultObj = listsJson.optJSONObject("result")
-                totalPages = resultObj?.optInt("totalPages", 1) ?: 1
-                val cols = resultObj?.optJSONArray("collections")
-                if (cols != null) {
-                    for (i in 0 until cols.length()) {
-                        val col = cols.optJSONObject(i) ?: continue
-                        val colName = col.optString("name").ifEmpty { "Tuyển Tập BLVietsub" }
-                        val moviesArr = col.optJSONArray("movies") ?: continue
-                        val colItems = mutableListOf<SearchResponse>()
-                        for (j in 0 until moviesArr.length()) {
-                            moviesArr.optJSONObject(j)?.let { movieJsonToSearchResponse(it) }?.let { colItems.add(it) }
-                        }
-                        if (colItems.isNotEmpty()) {
-                            lists.add(HomePageList(colName, colItems.distinctBy { it.url }, false))
-                        }
-                    }
-                }
-            } catch (_: Throwable) {}
-
-            // Fallback thêm danh sách phim-bl nếu collections trống
-            if (lists.isEmpty()) {
-                val fallback = fetchCategoryPage("the-loai/phim-bl", page)
-                return newHomePageResponse(
-                    listOf(HomePageList(request.name, fallback.first, false)),
-                    hasNext = page < fallback.second
-                )
-            }
-
-            return newHomePageResponse(lists, hasNext = page < totalPages)
-        }
-
-        // Các danh mục thể loại / quốc gia / phim-bo / phim-le (đầy đủ từ mới đến cũ)
+        // Chỉ hiển thị đúng 1 catalog "Phim Mới Cập Nhật" sắp xếp theo updatedAt (tập mới lên đầu)
         val (items, totalPages) = fetchCategoryPage(request.data, page)
         return newHomePageResponse(
             listOf(
@@ -278,7 +218,8 @@ class BLVXYZProvider : MainAPI() {
     }
 
     private suspend fun fetchCategoryPage(path: String, page: Int): Pair<List<SearchResponse>, Int> {
-        val targetUrl = "$mainUrl/$path?page=$page"
+        val separator = if (path.contains("?")) "&" else "?"
+        val targetUrl = "$mainUrl/$path${separator}page=$page"
         val items = mutableListOf<SearchResponse>()
         var totalPages = 1
 
@@ -347,15 +288,11 @@ class BLVXYZProvider : MainAPI() {
         }
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse> {
-        return search(query)
-    }
+    private suspend fun fetchSearchApi(keyword: String): List<SearchResponse> {
+        val k = keyword.trim()
+        if (k.isEmpty()) return emptyList()
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val q = query.trim()
-        if (q.isEmpty()) return emptyList()
-
-        val encoded = URLEncoder.encode(q, "UTF-8")
+        val encoded = URLEncoder.encode(k, "UTF-8")
         val searchApiUrl = "$apiUrl/api/v1/movies/search?keyword=$encoded"
         val results = mutableListOf<SearchResponse>()
 
@@ -371,12 +308,62 @@ class BLVXYZProvider : MainAPI() {
             val arr = json.optJSONArray("result")
             if (arr != null) {
                 for (i in 0 until arr.length()) {
-                    arr.optJSONObject(i)?.let { movieJsonToSearchResponse(it) }?.let { results.add(it) }
+                    arr.optJSONObject(i)?.let { movieJsonToSearchResponse(it, includeEnglishTitle = true) }?.let { results.add(it) }
                 }
             }
         } catch (_: Throwable) {}
 
         return results.distinctBy { it.url }
+    }
+
+    override suspend fun quickSearch(query: String): List<SearchResponse> {
+        return fetchSearchApi(query)
+    }
+
+    override suspend fun search(query: String): List<SearchResponse> {
+        val raw = query.trim().replace(Regex("""\s+"""), " ")
+        if (raw.isEmpty()) return emptyList()
+
+        // 1. Tìm trực tiếp bằng nguyên văn từ khóa (API hỗ trợ cả Tiếng Việt có/không dấu & Tiếng Anh origin_name)
+        val direct = fetchSearchApi(raw)
+        if (direct.isNotEmpty()) return direct
+
+        // 2. Fallback thông minh cho các tên Tiếng Anh/Tiếng Việt có ký tự phụ, năm, hoặc "The Series"
+        val candidates = linkedSetOf<String>()
+
+        val strippedNoise = raw
+            .replace(Regex("""\(\s*\d{4}\s*\)"""), " ")
+            .replace(
+                Regex(
+                    """\b(?:the\s+series|series|season\s*\d+|ss\s*\d+|part\s*\d+|phần\s*\d+|mùa\s*\d+|vietsub|thuyết\s*minh|lồng\s*tiếng|full|fhd|hd|1080p)\b""",
+                    RegexOption.IGNORE_CASE
+                ),
+                " "
+            )
+            .replace(Regex("""[:\-–|/!?.,]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        if (strippedNoise.length >= 2 && !strippedNoise.equals(raw, ignoreCase = true)) {
+            candidates.add(strippedNoise)
+        }
+
+        // Ghép số + chữ nếu viết tách (VD: "4 Minutes" -> "4Minutes")
+        val compactNumWord = raw.replace(Regex("""(\d)\s+([a-zA-Z])"""), "$1$2")
+        if (compactNumWord != raw) {
+            candidates.add(compactNumWord)
+        }
+
+        val words = strippedNoise.ifEmpty { raw }.split(" ").filter { it.length >= 2 }
+        if (words.size >= 3) {
+            candidates.add(words.take(2).joinToString(" "))
+        }
+
+        for (candidate in candidates) {
+            val found = fetchSearchApi(candidate)
+            if (found.isNotEmpty()) return found
+        }
+
+        return emptyList()
     }
 
     override suspend fun load(url: String): LoadResponse? {
