@@ -1,0 +1,10 @@
+{
+  "name": "BLVXYZ",
+  "pluginClassName": "com.blvxyz.BLVXYZPlugin",
+  "description": "Kho phim - Chỉ giữ link 1080p FHD, đầy đủ phim cũ đến mới cho Cloudstream Android TV Box & Mobile.",
+  "version": 7,
+  "author": "BLVXYZ",
+  "tvTypes": ["TvSeries", "Movie", "AsianDrama"],
+  "iconUrl": "https://blvietsub.xyz/favicon.ico",
+  "language": "vi"
+}
