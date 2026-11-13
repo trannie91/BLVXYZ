@@ -17,7 +17,7 @@ class RumbleExtractor : ExtractorApi() {
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
-    private fun parseAndEmitFromRumbleJson(jsonText: String, callback: (ExtractorLink) -> Unit): Boolean {
+    private suspend fun parseAndEmitFromRumbleJson(jsonText: String, callback: (ExtractorLink) -> Unit): Boolean {
         return try {
             val root = JSONObject(jsonText)
             val ua = root.optJSONObject("ua") ?: return false
