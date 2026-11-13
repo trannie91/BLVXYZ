@@ -2,9 +2,6 @@ package com.blvxyz
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -588,6 +585,7 @@ class BLVXYZProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         var linkFound = false
+        var currentServerFound = false
 
         // BỘ LỌC NGHIÊM NGẶT: CHỈ GIỮ LINK >= 1080p FHD - LOẠI BỎ TOÀN BỘ CHẤT LƯỢNG THẤP (< 1080p)
         val fhdCallback: (ExtractorLink) -> Unit = { link ->
@@ -602,6 +600,7 @@ class BLVXYZProvider : MainAPI() {
 
             if (!isBelow1080) {
                 linkFound = true
+                currentServerFound = true
                 callback.invoke(link)
             }
         }
@@ -625,6 +624,7 @@ class BLVXYZProvider : MainAPI() {
             val label = s.optString("label", "Server")
             if (epId <= 0) continue
 
+            // Thứ tự ưu tiên: SSPlay -> OK.ru -> VK -> Dailymotion -> Odysee -> Rumble -> Abyss -> Khác
             val order = when {
                 provider.contains("ssplay") -> 0
                 provider.contains("ok") -> 1
@@ -632,69 +632,91 @@ class BLVXYZProvider : MainAPI() {
                 provider.contains("dailymotion") -> 3
                 provider.contains("odysee") -> 4
                 provider.contains("rumble") -> 5
-                else -> 6
+                provider.contains("abyss") || provider.contains("other") -> 6
+                else -> 7
             }
             targets.add(ServerTarget(epId, provider, label, order))
         }
 
-        // Giải mã song song toàn bộ server của tập phim để tải nhanh và đầy đủ nhất
-        coroutineScope {
-            targets.sortedBy { it.order }.map { target ->
-                async {
-                    try {
-                        val resolved = resolveEmbedLinkFromWatchPage(slug, target.id) ?: return@async
-                        val (linkType, rawEmbedUrl) = resolved
-                        val embedUrl = rawEmbedUrl.replace("\\u0026", "&").replace("&amp;", "&").trim()
-                        val watchRef = "$mainUrl/xem-phim/$slug.${target.id}"
-                        val lowerUrl = embedUrl.lowercase()
+        // LẤY TUẦN TỰ TỪNG SERVER (Sequential Fallback):
+        // Chỉ gửi 1 request /xem-phim/<slug>.<epId> cho Server #1 trước;
+        // nếu lấy được link >= 1080p FHD hợp lệ thì DỪNG NGAY (không gửi request tới các server còn lại).
+        // Chỉ khi Server hiện tại lỗi/die hoặc < 1080p mới tiếp tục thử sang Server kế tiếp.
+        for (target in targets.sortedBy { it.order }) {
+            currentServerFound = false
+            try {
+                val resolved = resolveEmbedLinkFromWatchPage(slug, target.id) ?: continue
+                val (linkType, rawEmbedUrl) = resolved
+                val embedUrl = rawEmbedUrl.replace("\\u0026", "&").replace("&amp;", "&").trim()
+                val watchRef = "$mainUrl/xem-phim/$slug.${target.id}"
+                val lowerUrl = embedUrl.lowercase()
 
-                        when {
-                            linkType == "m3u8" || lowerUrl.contains(".m3u8") -> {
-                                if (lowerUrl.contains(".m3u8")) {
-                                    fhdCallback.invoke(
-                                        newExtractorLink(
-                                            source = name,
-                                            name = "${target.label} - 1080p FHD (HLS)",
-                                            url = embedUrl,
-                                            type = ExtractorLinkType.M3U8
-                                        ) {
-                                            this.quality = Qualities.P1080.value
-                                            this.referer = watchRef
-                                            this.headers = mapOf("Referer" to watchRef, "User-Agent" to userAgent)
-                                        }
-                                    )
+                when {
+                    linkType == "m3u8" || lowerUrl.contains(".m3u8") -> {
+                        if (lowerUrl.contains(".m3u8")) {
+                            val m3u8Valid = try {
+                                val m3u8Text = app.get(
+                                    embedUrl,
+                                    headers = mapOf("Referer" to watchRef, "User-Agent" to userAgent)
+                                ).text
+                                if (m3u8Text.contains("#EXT-X-STREAM-INF")) {
+                                    Regex("""RESOLUTION=\d+x(\d+)""").findAll(m3u8Text).any {
+                                        (it.groupValues[1].toIntOrNull() ?: 0) >= 1080
+                                    }
                                 } else {
-                                    loadExtractor(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                                    m3u8Text.contains("#EXTM3U")
                                 }
+                            } catch (_: Throwable) {
+                                false
                             }
-                            lowerUrl.contains("ssplay.net") -> {
-                                SSPlayExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                            if (m3u8Valid) {
+                                fhdCallback.invoke(
+                                    newExtractorLink(
+                                        source = name,
+                                        name = "${target.label} - 1080p FHD (HLS)",
+                                        url = embedUrl,
+                                        type = ExtractorLinkType.M3U8
+                                    ) {
+                                        this.quality = Qualities.P1080.value
+                                        this.referer = watchRef
+                                        this.headers = mapOf("Referer" to watchRef, "User-Agent" to userAgent)
+                                    }
+                                )
                             }
-                            lowerUrl.contains("dailymotion.com") || lowerUrl.contains("dai.ly") -> {
-                                DailymotionExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            lowerUrl.contains("ok.ru") -> {
-                                OkRuExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            lowerUrl.contains("vk.com") || lowerUrl.contains("vkvideo.ru") -> {
-                                VkExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            lowerUrl.contains("odysee.com") -> {
-                                OdyseeExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            lowerUrl.contains("rumble.com") -> {
-                                RumbleExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            lowerUrl.contains("abyssplayer.com") || lowerUrl.contains("abyss") || lowerUrl.contains("short.ink") || lowerUrl.contains("short.icu") -> {
-                                AbyssExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
-                            else -> {
-                                loadExtractor(embedUrl, watchRef, subtitleCallback, fhdCallback)
-                            }
+                        } else {
+                            loadExtractor(embedUrl, watchRef, subtitleCallback, fhdCallback)
                         }
-                    } catch (_: Throwable) {}
+                    }
+                    lowerUrl.contains("ssplay.net") -> {
+                        SSPlayExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("dailymotion.com") || lowerUrl.contains("dai.ly") -> {
+                        DailymotionExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("ok.ru") -> {
+                        OkRuExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("vk.com") || lowerUrl.contains("vkvideo.ru") -> {
+                        VkExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("odysee.com") -> {
+                        OdyseeExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("rumble.com") -> {
+                        RumbleExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    lowerUrl.contains("abyssplayer.com") || lowerUrl.contains("abyss") || lowerUrl.contains("short.ink") || lowerUrl.contains("short.icu") -> {
+                        AbyssExtractor().getUrl(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
+                    else -> {
+                        loadExtractor(embedUrl, watchRef, subtitleCallback, fhdCallback)
+                    }
                 }
-            }.awaitAll()
+            } catch (_: Throwable) {}
+
+            if (currentServerFound) {
+                break
+            }
         }
 
         return linkFound
