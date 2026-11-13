@@ -62,15 +62,16 @@ jobs:
           find . -maxdepth 4 -name "plugins.json" -exec cp -t ./build/ {} + 2>/dev/null || true
 
           if [ -f "./build/plugins.json" ]; then
-            sed -i 's/"version": -1/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 1/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 2/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 3/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 4/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 5/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 6/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 7/"version": 9/g' ./build/plugins.json || true
-            sed -i 's/"version": 8/"version": 9/g' ./build/plugins.json || true
+            sed -i 's/"version": -1/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 1/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 2/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 3/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 4/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 5/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 6/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 7/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 8/"version": 10/g' ./build/plugins.json || true
+            sed -i 's/"version": 9/"version": 10/g' ./build/plugins.json || true
           fi
 
           cat << 'EOF' > ./build/repo.json
