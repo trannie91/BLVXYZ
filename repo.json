@@ -1,0 +1,8 @@
+{
+  "name": "CloudBL - BLVXYZ",
+  "description": "Kho phim - Chuẩn 1080p FHD cho Cloudstream Android TV Box & Mobile.",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/trannie91/BLVXYZ/builds/plugins.json"
+  ]
+}

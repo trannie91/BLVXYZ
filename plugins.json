@@ -1,0 +1,24 @@
+[
+    {
+        "iconUrl": "https://blvietsub.xyz/favicon.ico",
+        "fileHash": "sha256-ce7bc8941c0952563396314923b530e1bf2120753ed69cf65409e9c04de30b26",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/trannie91/BLVXYZ",
+        "fileSize": 63194,
+        "status": 1,
+        "language": "vi",
+        "authors": [
+            "BLVXYZ"
+        ],
+        "tvTypes": [
+            "TvSeries",
+            "Movie",
+            "AsianDrama"
+        ],
+        "version": 100,
+        "internalName": "BLVXYZ",
+        "description": "Kho phim - L\u1ecdc chu\u1ea9n 1080p FHD, \u0111\u1ea7y \u0111\u1ee7 phim c\u0169 \u0111\u1ebfn m\u1edbi, t\u01b0\u01a1ng th\u00edch Cloudstream Android TV Box & Mobile.",
+        "url": "https://raw.githubusercontent.com/trannie91/BLVXYZ/builds/BLVXYZ.cs3",
+        "name": "BLVXYZ"
+    }
+]
