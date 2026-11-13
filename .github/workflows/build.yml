@@ -1,0 +1,108 @@
+name: Build and Publish Cloudstream Extension
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.12'
+
+      - name: Warm up JitPack Cache
+        run: |
+          echo "Triggering JitPack builds..."
+          curl -s -m 20 https://jitpack.io/api/builds/com.github.recloudstream/gradle > /dev/null 2>&1 || true
+          curl -s -m 20 https://jitpack.io/api/builds/com.github.recloudstream/cloudstream > /dev/null 2>&1 || true
+
+      - name: Build Cloudstream Plugin and Repository
+        run: |
+          if [ -f "./gradlew" ] && [ -s "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew make makePluginsJson --refresh-dependencies --no-daemon --stacktrace || (
+              echo "Retrying after waiting for JitPack build to finish..."
+              sleep 15
+              ./gradlew make makePluginsJson --refresh-dependencies --no-daemon --stacktrace
+            )
+          else
+            gradle make makePluginsJson --refresh-dependencies --no-daemon --stacktrace || (
+              echo "Retrying after waiting for JitPack build to finish..."
+              sleep 15
+              gradle make makePluginsJson --refresh-dependencies --no-daemon --stacktrace
+            )
+          fi
+
+      - name: Collect all .cs3 plugins, repo.json and metadata to build folder
+        run: |
+          mkdir -p ./build
+          find . -maxdepth 4 -name "*.cs3" -exec cp -t ./build/ {} + 2>/dev/null || true
+          find . -maxdepth 4 -name "plugins.json" -exec cp -t ./build/ {} + 2>/dev/null || true
+
+          if [ -f "./build/plugins.json" ]; then
+            sed -i 's/"version": -1/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 1/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 2/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 3/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 4/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 5/"version": 7/g' ./build/plugins.json || true
+            sed -i 's/"version": 6/"version": 7/g' ./build/plugins.json || true
+          fi
+
+          cat << 'EOF' > ./build/repo.json
+          {
+            "name": "CloudBL - BLVXYZ",
+            "description": "Kho phim - Chuẩn 1080p FHD cho Cloudstream Android TV Box & Mobile.",
+            "manifestVersion": 1,
+            "pluginLists": [
+              "https://raw.githubusercontent.com/${{ github.repository }}/builds/plugins.json"
+            ]
+          }
+          EOF
+
+          rm -rf ./build/reports ./build/tmp ./build/intermediates ./build/kotlin 2>/dev/null || true
+          touch ./build/.nojekyll
+
+          echo "=== Danh sách file trong ./build chuẩn bị đóng gói và xuất bản ==="
+          ls -lah ./build
+          if [ -f "./build/plugins.json" ]; then
+            echo "=== Nội dung plugins.json ==="
+            cat ./build/plugins.json
+          fi
+
+      - name: Upload Artifacts (Cho phép tải trực tiếp file .cs3 từ GitHub Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cloudstream-BLVXYZ-Extension
+          path: ./build/
+          if-no-files-found: warn
+
+      - name: Deploy plugins.json, repo.json and .cs3 to builds branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          publish_branch: builds
+          force_orphan: true
